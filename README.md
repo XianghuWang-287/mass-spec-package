@@ -1,2 +1,3 @@
 # mass-spec-package
-Python package for mass spectrometry
+## A Python package for mass spectrometry.
+Developed by Akshay Jay under the Wang Bioinformatics Lab at UCR.
