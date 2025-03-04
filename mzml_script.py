@@ -1,26 +1,59 @@
-import requests
-from pyteomics import mzml
 import re
+import requests
+import numpy as np
+from pyteomics import mzml
+import matplotlib.pyplot as plt
+import scipy.signal as signal
 
 
 def get_scan(max_scan):
    scan = input(f"Enter a scan number between 1 and {max_scan} or type q to quit: ")
-   if(scan == "q"):
+   if(scan.lower() == "q" or scan.lower() == "quit"):
       print("Exiting...")
       exit()
    return scan
 
-url = "https://zenodo.org/records/10211590/files/D141_POS.mzML"
-start_byte = 56_068_462 - 1_000_000
-end_byte = 56_068_462 - 1
+database = input("Enter the Zenodo database ID (e.g., 1234567): ")
+while not database.isdigit():
+   print("Invalid input. Please enter a numeric database ID.")
+   database = input("Enter the Zenodo database ID (e.g., 1234567): ")
+# database = 10211590
+request_url = f"https://zenodo.org/api/records/{database}"
+response = requests.get(request_url)
+response.raise_for_status()
+data = response.json()
+
+# Loop through the files to find a .mzML file
+available_files = {file['key']: file['size'] for file in data['files'] if file['key'].endswith('.mzML')}
+file_url = None
+file_size = 0
+print("Available files:")
+for file, size in available_files.items():
+   if size < 1024:
+       size_str = f"{size} bytes"
+   elif size < 1024**2:
+       size_str = f"{size / 1024:.2f} KB"
+   elif size < 1024**3:
+       size_str = f"{size / 1024**2:.2f} MB"
+   else:
+       size_str = f"{size / 1024**3:.2f} GB"
+   print(f"{file} ({size_str})")
+file_name = input("Enter the file you want to process: ")
+if file_name in available_files:
+   file_url = f"https://zenodo.org/record/{database}/files/{file_name}"
+   file_size = available_files[file_name]
+if not file_url:
+    raise ValueError("No .mzML file found in the provided Zenodo database.")
+
+start_byte = file_size - 1_000_000
+end_byte = file_size - 1
 headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-response = requests.get(url, headers=headers, stream=True)
+response = requests.get(file_url, headers=headers, stream=True)
 response.raise_for_status()
 
 with open("indexed_part.mzML", "wb") as f:
    for chunk in response.iter_content(chunk_size=8192):
        f.write(chunk)
-print("Downloaded indexed part of mzML")
 
 with open("indexed_part.mzML", "r", encoding="utf-8") as f:
    text = f.read()
@@ -29,7 +62,6 @@ with open("indexed_part.mzML", "r", encoding="utf-8") as f:
 matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
 scan_offsets = {scan_id: int(offset) for scan_id, offset in matches}
 scan_list = list(scan_offsets.items())
-print("Scan offsets found:", scan_list[:5])
 last_key = None
 for key in reversed(scan_offsets):
    if 'scan=' in key:
@@ -54,10 +86,25 @@ while(True):
 
    # Request the specific scan range from the server
    headers = {"Range": f"bytes={scan_start}-{scan_end}"}
-   response = requests.get(url, headers=headers, stream=True)
+   response = requests.get(file_url, headers=headers, stream=True)
    response.raise_for_status()
 
    with open("target_scan.mzML", "wb") as f:
       for chunk in response.iter_content(chunk_size=8192):
          f.write(chunk)
    print(f"Downloaded scan {target_scan_id}")
+
+   with mzml.read("target_scan.mzML") as reader:
+      for spectrum in reader:
+         if spectrum['id'] == target_scan_id:
+            mz_values = spectrum['m/z array']
+            intensity_values = spectrum['intensity array']
+            print(f"m/z values: {mz_values}")
+            print(f"Intensity values: {intensity_values}")
+
+            plt.figure(figsize=(10, 6))
+            plt.plot(mz_values, intensity_values)
+            plt.xlabel('m/z')
+            plt.ylabel('Intensity')
+            plt.title(f'Scan {desired_scan}')
+   plt.show()
