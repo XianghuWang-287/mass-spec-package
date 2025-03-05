@@ -14,6 +14,9 @@ def get_scan(max_scan):
    return scan
 
 database = input("Enter the Zenodo database ID (e.g., 1234567): ")
+if(database == 'q' or database == 'quit'):
+   print("Exiting...")
+   exit()
 while not database.isdigit():
    print("Invalid input. Please enter a numeric database ID.")
    database = input("Enter the Zenodo database ID (e.g., 1234567): ")
@@ -96,15 +99,23 @@ while(True):
 
    with mzml.read("target_scan.mzML") as reader:
       for spectrum in reader:
-         if spectrum['id'] == target_scan_id:
-            mz_values = spectrum['m/z array']
-            intensity_values = spectrum['intensity array']
-            print(f"m/z values: {mz_values}")
-            print(f"Intensity values: {intensity_values}")
+         mz_values = spectrum['m/z array']
+         intensity_values = spectrum['intensity array']
+         # print(f"m/z values: {mz_values}")
+         # print(f"Intensity values: {intensity_values}")
+         retention_time = spectrum.get('scanList', {}).get('scan', [{}])[0].get('scan start time', 'N/A')
+         charge_state = spectrum.get('precursorList', {}).get('precursor', [{}])[0].get('selectedIonList', {}).get('selectedIon', [{}])[0].get('charge state', 'N/A')
+         collision_energy = spectrum.get('precursorList', {}).get('precursor', [{}])[0].get('activation', {}).get('collision energy', 'N/A')
+         ms_level = spectrum.get('ms level', 'N/A')
 
-            plt.figure(figsize=(10, 6))
-            plt.plot(mz_values, intensity_values)
-            plt.xlabel('m/z')
-            plt.ylabel('Intensity')
-            plt.title(f'Scan {desired_scan}')
+         print(f"Retention time: {retention_time} seconds")
+         print(f"Charge state: {charge_state}")
+         print(f"Collision energy: {collision_energy}")
+         print(f"MS level: {ms_level}")
+
+         plt.figure(figsize=(10, 6))
+         plt.plot(mz_values, intensity_values)
+         plt.xlabel('m/z')
+         plt.ylabel('Intensity')
+         plt.title(f'Scan {desired_scan}')
    plt.show()
