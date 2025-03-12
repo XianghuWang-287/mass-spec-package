@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import scipy.signal as signal
 
 
-def get_scan(max_scan):
+def scan_user_input(max_scan):
    scan = input(f"Enter a scan number between 1 and {max_scan} or type q to quit: ")
    if(scan.lower() == "q" or scan.lower() == "quit"):
       print("Exiting...")
@@ -65,7 +65,7 @@ def mzml_scan():
    # If text contains <offset idRef="abc123">456</offset> then matches stores ('abc123', '456')
    matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
    scan_offsets = {scan_id: int(offset) for scan_id, offset in matches}
-   scan_list = list(scan_offsets.items())
+   scan_numbers = [int(scan_id.split('scan=')[1]) for scan_id in scan_offsets.keys() if 'scan=' in scan_id]
    last_key = None
    for key in reversed(scan_offsets):
       if 'scan=' in key:
@@ -73,20 +73,28 @@ def mzml_scan():
          break
    if last_key is None:
       raise ValueError("No key containing 'scan=' found in scan_offsets")
-   max_scan = int(last_key.split('scan=')[1].split(' ')[0])
+   max_scan = int(last_key.split('scan=')[1])
+
    while(True):
-      desired_scan = get_scan(max_scan)
-      while(not desired_scan.isdigit() or int(desired_scan) < 0 or int(desired_scan) > max_scan):
-         print("Invalid scan number. Please enter a valid integer.")
-         desired_scan = get_scan(max_scan)
+      desired_scan = scan_user_input(max_scan)
+      while(not(desired_scan.isdigit() and (0 <= int(desired_scan) <= max_scan) and int(desired_scan) in scan_numbers)):
+         if(desired_scan.isdigit() and (0 <= int(desired_scan) <= max_scan)):
+            print(f"Scan {desired_scan} not found. Please try again.")
+         else:
+            print("Invalid scan number. Please enter a valid integer.")
+         desired_scan = scan_user_input(max_scan)
       if desired_scan.startswith('0'):
          desired_scan = desired_scan.lstrip('0')
       print(f"Desired scan: {desired_scan}")
-      end_scan = str(int(desired_scan) + 1)
       target_scan_id = "controllerType=0 controllerNumber=1 scan=" + desired_scan
-      end_scan_id = "controllerType=0 controllerNumber=1 scan=" + end_scan
+      next_scan_number = None
+      for scan_num in scan_numbers[1:]:
+         if scan_num > int(desired_scan):
+            next_scan_number = scan_num
+            break
+      end_scan_id = "controllerType=0 controllerNumber=1 scan=" + str(next_scan_number) if next_scan_number else None
       scan_start = scan_offsets[target_scan_id]
-      scan_end = scan_offsets[end_scan_id] - 10 if end_scan_id in scan_offsets else 10000
+      scan_end = scan_offsets[end_scan_id] - 10 if end_scan_id else 50
 
       # Request the specific scan range from the server
       headers = {"Range": f"bytes={scan_start}-{scan_end}"}
@@ -123,3 +131,4 @@ def mzml_scan():
             plt.title(f'Scan {desired_scan}')
       plt.show()
 
+mzml_scan()
