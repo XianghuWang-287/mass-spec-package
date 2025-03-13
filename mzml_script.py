@@ -14,14 +14,14 @@ def scan_user_input(max_scan):
    return scan
 
 def mzml_scan():
-   database = input("Enter the Zenodo database ID (e.g., 1234567): ")
-   if(database == 'q' or database == 'quit'):
-      print("Exiting...")
-      exit()
-   while not database.isdigit():
-      print("Invalid input. Please enter a numeric database ID.")
-      database = input("Enter the Zenodo database ID (e.g., 1234567): ")
-   # database = 10211590
+   # database = input("Enter the Zenodo database ID (e.g., 1234567): ")
+   # if(database == 'q' or database == 'quit'):
+   #    print("Exiting...")
+   #    exit()
+   # while not database.isdigit():
+   #    print("Invalid input. Please enter a numeric database ID.")
+   #    database = input("Enter the Zenodo database ID (e.g., 1234567): ")
+   database = 10211590
    request_url = f"https://zenodo.org/api/records/{database}"
    response = requests.get(request_url)
    response.raise_for_status()
@@ -49,7 +49,7 @@ def mzml_scan():
    if not file_url:
       raise ValueError("No .mzML file found in the provided Zenodo database.")
 
-   start_byte = file_size - 1_000_000
+   start_byte = file_size - 250000
    end_byte = file_size - 1
    headers = {"Range": f"bytes={start_byte}-{end_byte}"}
    response = requests.get(file_url, headers=headers, stream=True)
@@ -59,8 +59,21 @@ def mzml_scan():
       for chunk in response.iter_content(chunk_size=8192):
          f.write(chunk)
 
-   with open("indexed_part.mzML", "r", encoding="utf-8") as f:
-      text = f.read()
+   while True:
+      with open("indexed_part.mzML", "r", encoding="utf-8") as f:
+         text = f.read()
+
+      if "</mzML>" in text:
+         break
+
+      start_byte = max(0, start_byte - 250000)
+      headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+      response = requests.get(file_url, headers=headers, stream=True)
+      response.raise_for_status()
+
+      with open("indexed_part.mzML", "wb") as f:
+         for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
 
    # If text contains <offset idRef="abc123">456</offset> then matches stores ('abc123', '456')
    matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
