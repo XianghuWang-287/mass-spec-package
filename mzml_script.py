@@ -5,6 +5,7 @@ from pyteomics import mzml
 import matplotlib.pyplot as plt
 import scipy.signal as signal
 
+database = 10211590
 
 def scan_user_input(max_scan):
    scan = input(f"Enter a scan number between 1 and {max_scan} or type q to quit: ")
@@ -13,7 +14,7 @@ def scan_user_input(max_scan):
       exit()
    return scan
 
-def mzml_scan():
+def mzml_scan(databaseNum):
    # database = input("Enter the Zenodo database ID (e.g., 1234567): ")
    # if(database == 'q' or database == 'quit'):
    #    print("Exiting...")
@@ -21,8 +22,7 @@ def mzml_scan():
    # while not database.isdigit():
    #    print("Invalid input. Please enter a numeric database ID.")
    #    database = input("Enter the Zenodo database ID (e.g., 1234567): ")
-   database = 10211590
-   request_url = f"https://zenodo.org/api/records/{database}"
+   request_url = f"https://zenodo.org/api/records/{databaseNum}"
    response = requests.get(request_url)
    response.raise_for_status()
    data = response.json()
@@ -107,7 +107,7 @@ def mzml_scan():
             break
       end_scan_id = "controllerType=0 controllerNumber=1 scan=" + str(next_scan_number) if next_scan_number else None
       scan_start = scan_offsets[target_scan_id]
-      scan_end = scan_offsets[end_scan_id] - 10 if end_scan_id else 50
+      scan_end = scan_offsets[end_scan_id] - 10 if end_scan_id else file_size - 1
 
       # Request the specific scan range from the server
       headers = {"Range": f"bytes={scan_start}-{scan_end}"}
@@ -118,6 +118,18 @@ def mzml_scan():
          for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
       print(f"Downloaded scan {target_scan_id}")
+
+      # If searching the last index, ensure the file cuts off exactly at </spectrum>
+      if not end_scan_id:
+         with open("target_scan.mzML", "rb+") as f:
+            f.seek(0, 2)  # Move to the end of the file
+            target_size = f.tell()
+            f.seek(0)  # Move back to the start of the file
+            content = f.read(target_size).decode("utf-8", errors="ignore")
+            last_spectrum_end = content.rfind("</spectrum>")
+            if last_spectrum_end != -1:
+               f.seek(last_spectrum_end + len("</spectrum>"))
+               f.truncate()
 
       with mzml.read("target_scan.mzML") as reader:
          for spectrum in reader:
@@ -144,4 +156,4 @@ def mzml_scan():
             plt.title(f'Scan {desired_scan}')
       plt.show()
 
-mzml_scan()
+mzml_scan(database)
