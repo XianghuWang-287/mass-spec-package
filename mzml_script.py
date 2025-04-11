@@ -7,66 +7,52 @@ import scipy.signal as signal
 
 database = 10211590
 
-def scan_user_input(max_scan):
-   scan = input(f"Enter a scan number between 1 and {max_scan} or type q to quit: ")
-   if(scan.lower() == "q" or scan.lower() == "quit"):
-      print("Exiting...")
-      exit()
-   return scan
+class mzml_repo:
+   def __init__(self, databaseNum):
+      self.database_num = databaseNum
+      self.file_names = []
+      self.all_files = {}
+      self.all_scans = {}
 
-def mzml_scan(databaseNum):
-   # database = input("Enter the Zenodo database ID (e.g., 1234567): ")
-   # if(database == 'q' or database == 'quit'):
-   #    print("Exiting...")
-   #    exit()
-   # while not database.isdigit():
-   #    print("Invalid input. Please enter a numeric database ID.")
-   #    database = input("Enter the Zenodo database ID (e.g., 1234567): ")
-   request_url = f"https://zenodo.org/api/records/{databaseNum}"
-   response = requests.get(request_url)
-   response.raise_for_status()
-   data = response.json()
+   def get_files(self):
+      if self.file_names != []:
+         print("File names already retrieved.")
+         return self.file_names
+      request_url = f"https://zenodo.org/api/records/{self.database_num}"
+      response = requests.get(request_url)
+      response.raise_for_status()
+      data = response.json()
 
-   # Loop through the files to find a .mzML file
-   available_files = {file['key']: file['size'] for file in data['files'] if file['key'].endswith('.mzML')}
-   file_url = None
-   file_size = 0
-   print("Available files:")
-   for file, size in available_files.items():
-      if size < 1024:
-         size_str = f"{size} bytes"
-      elif size < 1024**2:
-         size_str = f"{size / 1024:.2f} KB"
-      elif size < 1024**3:
-         size_str = f"{size / 1024**2:.2f} MB"
-      else:
-         size_str = f"{size / 1024**3:.2f} GB"
-      print(f"{file} ({size_str})")
-   file_name = input("Enter the file you want to process: ")
-   if file_name in available_files:
+      # Loop through the files to find a .mzML file
+      self.all_files = {file['key']: file['size'] for file in data['files'] if file['key'].endswith('.mzML')}
+      file_url = None
+      file_size = 0
+      print("Available files:")
+      for file, size in self.all_files.items():
+         if size < 1024:
+            size_str = f"{size} bytes"
+         elif size < 1024**2:
+            size_str = f"{size / 1024:.2f} KB"
+         elif size < 1024**3:
+            size_str = f"{size / 1024**2:.2f} MB"
+         else:
+            size_str = f"{size / 1024**3:.2f} GB"
+         print(f"{file} ({size_str})")
+         self.all_files[file] = size
+      self.file_names = list(self.all_files.keys())
+      return self.file_names
+
+   # Create an entry in all_scans for each file and a list of its offsets
+   def populate_all_scans(self, file_name):
+      if file_name not in self.file_names:
+         raise ValueError("File not found in the database.")
       file_url = f"https://zenodo.org/record/{database}/files/{file_name}"
-      file_size = available_files[file_name]
-   if not file_url:
-      raise ValueError("No .mzML file found in the provided Zenodo database.")
+      file_size = self.all_files[file_name]
+      if not file_url:
+         raise ValueError("No .mzML file found in the provided Zenodo database.")
 
-   start_byte = file_size - 250000
-   end_byte = file_size - 1
-   headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-   response = requests.get(file_url, headers=headers, stream=True)
-   response.raise_for_status()
-
-   with open("indexed_part.mzML", "wb") as f:
-      for chunk in response.iter_content(chunk_size=8192):
-         f.write(chunk)
-
-   while True:
-      with open("indexed_part.mzML", "r", encoding="utf-8") as f:
-         text = f.read()
-
-      if "</mzML>" in text:
-         break
-
-      start_byte = max(0, start_byte - 250000)
+      start_byte = file_size - 250000
+      end_byte = file_size - 1
       headers = {"Range": f"bytes={start_byte}-{end_byte}"}
       response = requests.get(file_url, headers=headers, stream=True)
       response.raise_for_status()
@@ -75,39 +61,63 @@ def mzml_scan(databaseNum):
          for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
 
-   # If text contains <offset idRef="abc123">456</offset> then matches stores ('abc123', '456')
-   matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
-   scan_offsets = {scan_id: int(offset) for scan_id, offset in matches}
-   scan_numbers = [int(scan_id.split('scan=')[1]) for scan_id in scan_offsets.keys() if 'scan=' in scan_id]
-   last_key = None
-   for key in reversed(scan_offsets):
-      if 'scan=' in key:
-         last_key = key
-         break
-   if last_key is None:
-      raise ValueError("No key containing 'scan=' found in scan_offsets")
-   max_scan = int(last_key.split('scan=')[1])
+      while True:
+         with open("indexed_part.mzML", "r", encoding="utf-8") as f:
+            text = f.read()
 
-   while(True):
-      desired_scan = scan_user_input(max_scan)
-      while(not(desired_scan.isdigit() and (0 <= int(desired_scan) <= max_scan) and int(desired_scan) in scan_numbers)):
-         if(desired_scan.isdigit() and (0 <= int(desired_scan) <= max_scan)):
-            print(f"Scan {desired_scan} not found. Please try again.")
-         else:
-            print("Invalid scan number. Please enter a valid integer.")
-         desired_scan = scan_user_input(max_scan)
+         if "</mzML>" in text:
+            break
+
+         start_byte = max(0, start_byte - 250000)
+         headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+         response = requests.get(file_url, headers=headers, stream=True)
+         response.raise_for_status()
+
+         with open("indexed_part.mzML", "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+               f.write(chunk)
+
+      # If text contains <offset idRef="abcd scan=123">456</offset> then matches stores ('abcd scan=123', '456')
+      matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
+      # scan_dict stores [123] = 456
+      scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
+      # scan_numbers = [int(scan_id.split('scan=')[1]) for scan_id in scan_offsets.keys() if 'scan=' in scan_id]
+      max_scan = list(scan_dict.keys())[-1] if scan_dict else None
+      if max_scan is None:
+         raise ValueError("No key containing 'scan=' found in scan_dict")
+      self.all_scans[file_name] = (scan_dict, max_scan, file_url, file_size)
+
+   # If a file is in all_scans already, return the scan. If not, call populate_all_scans first.
+   def get_scan(self, file_name, given_scan):
+      if(file_name not in self.file_names):
+         raise ValueError("File not found in the database.")
+      if file_name not in self.all_scans:
+         print("File not found in all_scans. Populating all_scans...")
+         self.populate_all_scans(file_name)
+
+      scan_dict = self.all_scans[file_name][0]
+      scan_numbers = list(scan_dict.keys())
+      max_scan = self.all_scans[file_name][1]
+      file_url = self.all_scans[file_name][2]
+      file_size = self.all_scans[file_name][3]
+      desired_scan = str(given_scan)
       if desired_scan.startswith('0'):
          desired_scan = desired_scan.lstrip('0')
-      print(f"Desired scan: {desired_scan}")
-      target_scan_id = "controllerType=0 controllerNumber=1 scan=" + desired_scan
+      if(desired_scan.isdigit() and (0 <= int(desired_scan) <= max_scan)):
+         if int(desired_scan) not in scan_numbers:
+            print(f"Scan {desired_scan} not found. Please try again.")
+            return
+      else:
+         print(f"Not a valid scan number. Please try again.")
+         return
       next_scan_number = None
       for scan_num in scan_numbers[1:]:
          if scan_num > int(desired_scan):
             next_scan_number = scan_num
             break
-      end_scan_id = "controllerType=0 controllerNumber=1 scan=" + str(next_scan_number) if next_scan_number else None
-      scan_start = scan_offsets[target_scan_id]
-      scan_end = scan_offsets[end_scan_id] - 10 if end_scan_id else file_size - 1
+      end_scan_id = next_scan_number
+      scan_start = scan_dict[given_scan]
+      scan_end = scan_dict[end_scan_id] - 10 if end_scan_id else file_size - 1
 
       # Request the specific scan range from the server
       headers = {"Range": f"bytes={scan_start}-{scan_end}"}
@@ -117,7 +127,7 @@ def mzml_scan(databaseNum):
       with open("target_scan.mzML", "wb") as f:
          for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
-      print(f"Downloaded scan {target_scan_id}")
+      print(f"Downloaded scan {desired_scan}")
 
       # If searching the last index, ensure the file cuts off exactly at </spectrum>
       if not end_scan_id:
@@ -135,8 +145,6 @@ def mzml_scan(databaseNum):
          for spectrum in reader:
             mz_values = spectrum['m/z array']
             intensity_values = spectrum['intensity array']
-            # print(f"m/z values: {mz_values}")
-            # print(f"Intensity values: {intensity_values}")
             retention_time = spectrum.get('scanList', {}).get('scan', [{}])[0].get('scan start time', 'N/A')
             charge_state = spectrum.get('precursorList', {}).get('precursor', [{}])[0].get('selectedIonList', {}).get('selectedIon', [{}])[0].get('charge state', 'N/A')
             collision_energy = spectrum.get('precursorList', {}).get('precursor', [{}])[0].get('activation', {}).get('collision energy', 'N/A')
@@ -147,13 +155,30 @@ def mzml_scan(databaseNum):
             print(f"Collision energy: {collision_energy}")
             print(f"MS level: {ms_level}")
 
-            #Filter peaks and plot as bar graph here
-            
+
+            max_intensity = max(intensity_values)
+            normalized_intensities = intensity_values / max_intensity # Normalize the intensities
+            # peak_indices, _ = signal.find_peaks(normalized_intensities, prominence=0.05)
+            filtered_mz = mz_values
+            filtered_intensity = normalized_intensities
+
+            # Plot the filtered peaks as a bar graph
             plt.figure(figsize=(10, 6))
-            plt.plot(mz_values, intensity_values)
+            plt.bar(filtered_mz, filtered_intensity, width=1.0, color='blue', alpha=0.7)
             plt.xlabel('m/z')
             plt.ylabel('Intensity')
-            plt.title(f'Scan {desired_scan}')
+            plt.title(f'Filtered Peaks for Scan {desired_scan}')
+            
       plt.show()
 
-mzml_scan(database)
+   # def scan_user_input(self, max_scan):
+   #    scan = input(f"Enter a scan number between 1 and {max_scan} or type q to quit: ")
+   #    if(scan.lower() == "q" or scan.lower() == "quit"):
+   #       print("Exiting...")
+   #       exit()
+   #    return scan
+
+given_scan = 2783
+test_repo = mzml_repo(database)
+file_name = test_repo.get_files()[0]
+test_repo.get_scan(file_name, given_scan)
