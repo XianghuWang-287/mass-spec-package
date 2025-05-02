@@ -171,14 +171,8 @@ class mzml_repo:
             
       plt.show()
 
-   # def scan_user_input(self, max_scan):
-   #    scan = input(f"Enter a scan number between 1 and {max_scan} or type q to quit: ")
-   #    if(scan.lower() == "q" or scan.lower() == "quit"):
-   #       print("Exiting...")
-   #       exit()
-   #    return scan
-
-given_scan = 2783
-test_repo = mzml_repo(database)
-file_name = test_repo.get_files()[0]
-test_repo.get_scan(file_name, given_scan)
+# given_scan = 2783
+# test_repo = mzml_repo(database)
+# file_name = test_repo.get_files()[0]
+# scan1 = test_repo.get_scan(file_name, given_scan)
+# User will keep calling get_scan() to populate their own scan list
