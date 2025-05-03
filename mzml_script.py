@@ -43,7 +43,7 @@ class mzml_repo:
       return self.file_names
 
    # Create an entry in all_scans for each file and a list of its offsets
-   def populate_all_scans(self, file_name):
+   def populate_all_scans_full(self, file_name):
       if file_name not in self.file_names:
          raise ValueError("File not found in the database.")
       file_url = f"https://zenodo.org/record/{database}/files/{file_name}"
@@ -82,24 +82,81 @@ class mzml_repo:
       # scan_dict stores [123] = 456
       scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
       # scan_numbers = [int(scan_id.split('scan=')[1]) for scan_id in scan_offsets.keys() if 'scan=' in scan_id]
+      first_scan = list(scan_dict.keys())[0] if scan_dict else None
       max_scan = list(scan_dict.keys())[-1] if scan_dict else None
       if max_scan is None:
          raise ValueError("No key containing 'scan=' found in scan_dict")
-      self.all_scans[file_name] = (scan_dict, max_scan, file_url, file_size)
+      self.all_scans[file_name] = (scan_dict, first_scan, max_scan, file_url, file_size)
+   
+   # Create an entry in all_scans for each file and a list of its offsets, but only up until the given scan number is read
+   def populate_all_scans_partial(self, file_name, scan_number):
+      if file_name not in self.file_names:
+         raise ValueError("File not found in the database.")
+      file_url = f"https://zenodo.org/record/{database}/files/{file_name}"
+      file_size = self.all_files[file_name]
+      if not file_url:
+         raise ValueError("No .mzML file found in the provided Zenodo database.")
+      
+      start_byte = file_size - 250000
+      end_byte = file_size - 1
+      headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+      response = requests.get(file_url, headers=headers, stream=True)
+      response.raise_for_status()
+
+      with open("indexed_part.mzML", "wb") as f:
+         for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+      
+      with open("indexed_part.mzML", "r", encoding="utf-8") as f:
+            text = f.read()
+      # If text contains <offset idRef="abcd scan=123">456</offset> then matches stores ('abcd scan=123', '456')
+      matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
+      # scan_dict stores [123] = 456
+      scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
+      while scan_number not in scan_dict:
+         if "</mzML>" in text:
+            break
+         start_byte = max(0, start_byte - 250000)
+         headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+         response = requests.get(file_url, headers=headers, stream=True)
+         response.raise_for_status()
+
+         with open("indexed_part.mzML", "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+               f.write(chunk)
+         with open("indexed_part.mzML", "r", encoding="utf-8") as f:
+            text = f.read()
+         new_matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
+         new_matches.extend(matches)
+         matches = new_matches
+         scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
+
+      first_scan = list(scan_dict.keys())[0] if scan_dict else None
+      max_scan = list(scan_dict.keys())[-1] if scan_dict else None
+      if max_scan is None:
+         raise ValueError("No key containing 'scan=' found in scan_dict")
+      if not(self.all_scans.get(file_name) and self.all_scans[file_name][1] <= first_scan):
+         self.all_scans[file_name] = (scan_dict, first_scan, max_scan, file_url, file_size)
+   
+   def populate_all_scans(self, file_name, scan_number, partial_indexing=True):
+      if partial_indexing:
+         self.populate_all_scans_partial(file_name, scan_number)
+      else:
+         self.populate_all_scans_full(file_name)
 
    # If a file is in all_scans already, return the scan. If not, call populate_all_scans first.
    def get_scan(self, file_name, given_scan):
       if(file_name not in self.file_names):
          raise ValueError("File not found in the database.")
-      if file_name not in self.all_scans:
-         print("File not found in all_scans. Populating all_scans...")
-         self.populate_all_scans(file_name)
+      if given_scan not in self.all_scans.get(file_name, {}).get(0, {}):
+         print(f"Scan {given_scan} not found in all_scans for {file_name}.\nPopulating all scans...")
+         self.populate_all_scans(file_name, given_scan)
 
       scan_dict = self.all_scans[file_name][0]
       scan_numbers = list(scan_dict.keys())
-      max_scan = self.all_scans[file_name][1]
-      file_url = self.all_scans[file_name][2]
-      file_size = self.all_scans[file_name][3]
+      max_scan = self.all_scans[file_name][2]
+      file_url = self.all_scans[file_name][3]
+      file_size = self.all_scans[file_name][4]
       desired_scan = str(given_scan)
       if desired_scan.startswith('0'):
          desired_scan = desired_scan.lstrip('0')
@@ -168,11 +225,23 @@ class mzml_repo:
             plt.xlabel('m/z')
             plt.ylabel('Intensity')
             plt.title(f'Filtered Peaks for Scan {desired_scan}')
-            
-      plt.show()
 
-# given_scan = 2783
-# test_repo = mzml_repo(database)
-# file_name = test_repo.get_files()[0]
-# scan1 = test_repo.get_scan(file_name, given_scan)
+      # Return scan as a dictionary
+      scan_data = {
+            'mz': filtered_mz,
+            'intensities': filtered_intensity,
+            'RT-time': retention_time,
+            'charge': charge_state,
+            'collision energy': collision_energy,
+            'ms level': ms_level
+      }
+      plt.show()
+      plt.close()
+      return scan_data
+
+given_scan = 8312
+test_repo = mzml_repo(database)
+file_name = test_repo.get_files()[0]
+scan1 = test_repo.get_scan(file_name, given_scan)
+print(f"Scan {given_scan}'s data: {scan1}")
 # User will keep calling get_scan() to populate their own scan list
