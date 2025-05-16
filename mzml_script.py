@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import scipy.signal as signal
 import time
 
-database = 10211590
+database = 4043415
 
 ###
 # Documentation:
@@ -125,10 +125,10 @@ class mzml_repo:
       
       with open("indexed_part.mzML", "r", encoding="utf-8") as f:
             text = f.read()
-      # If text contains <offset idRef="abcd scan=123">456</offset> then matches stores ('abcd scan=123', '456')
-      matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
+      # If text contains <offset idRef="abcd scan=123">456</offset> then matches stores ('123', '456')
+      matches = re.findall(r'<offset idRef="[^"]*?(\d+)">(\d+)</offset>', text)
       # scan_dict stores [123] = 456
-      scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
+      scan_dict = {int(scan_id): int(offset) for scan_id, offset in matches}
       while scan_number not in scan_dict:
          if "</mzML>" in text:
             break
@@ -142,15 +142,16 @@ class mzml_repo:
                f.write(chunk)
          with open("indexed_part.mzML", "r", encoding="utf-8") as f:
             text = f.read()
-         new_matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
+         new_matches = re.findall(r'<offset idRef="[^"]*?(\d+)">(\d+)</offset>', text)
          new_matches.extend(matches)
          matches = new_matches
-         scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
+         scan_dict = {int(scan_id): int(offset) for scan_id, offset in matches}
 
       first_scan = list(scan_dict.keys())[0] if scan_dict else None
       max_scan = list(scan_dict.keys())[-1] if scan_dict else None
+      print(f"First scan: {first_scan}, Max scan: {max_scan}")
       if max_scan is None:
-         raise ValueError("No key containing 'scan=' found in scan_dict")
+         raise ValueError("No key containing a scan found in scan_dict")
       if not(self.all_scans.get(file_name) and self.all_scans[file_name][1] <= first_scan):
          self.all_scans[file_name] = (scan_dict, first_scan, max_scan, file_url, file_size)
    
@@ -252,11 +253,14 @@ class mzml_repo:
 
     return scan_data
 
-# given_scan = 8153
-# test_repo = mzml_repo(database)
-# file_name = test_repo.get_files()[0]
-# scan1 = test_repo.get_scan(file_name, given_scan)
-# scan2 = test_repo.get_scan(file_name, 1872)
-# scan3 = test_repo.get_scan(file_name, 163)
-# scan3 = test_repo.get_scan(file_name, 2392)
-# print(test_repo.all_scans)
+given_scan = 105823
+test_repo = mzml_repo(database)
+file_name = test_repo.get_files()[0]
+scan1 = test_repo.get_scan(file_name, given_scan)
+scan2 = test_repo.get_scan(file_name, 106465)
+scan3 = test_repo.get_scan(file_name, 100625)
+scan4 = test_repo.get_scan(file_name, 100247)
+print(scan1['RT-time'])
+print(scan2['RT-time'])
+print(scan3['RT-time'])
+print(scan4['RT-time'])
