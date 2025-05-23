@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 import scipy.signal as signal
 import time
 
-database = 4043415
-
 ###
 # Documentation:
 # file_names stores the names of every file in the database
@@ -18,10 +16,13 @@ database = 4043415
 #     3) max_scan: the last scan number in the file
 #     4) file_url: the file's URL
 #     5) file_size: the file's size in bytes
-# The populate_all_scans() method populates the all_scans dictionary with scan data for a given file.
+# E.g. to access the scan_dict for a file, use all_scans[file_name][0].
+# The populate_all_scans() method populates the scan_dict for a given file.
+# Toggle between partial and full indexing via the partial_indexing attribute.
 # The get_scan() method retrieves a specific scan from the file and returns it as a dictionary.
 # get_scan() depends on populate_all_scans() since retrieves the desired scan's byte offset from all_scans
 ###
+
 
 class mzml_repo:
    def __init__(self, databaseNum):
@@ -29,6 +30,7 @@ class mzml_repo:
       self.file_names = []
       self.all_files = {}
       self.all_scans = {}
+      self.partial_indexing = True
 
    def get_files(self):
       if self.file_names != []:
@@ -93,15 +95,14 @@ class mzml_repo:
             for chunk in response.iter_content(chunk_size=8192):
                f.write(chunk)
 
-      # If text contains <offset idRef="abcd scan=123">456</offset> then matches stores ('abcd scan=123', '456')
-      matches = re.findall(r'<offset idRef="([^"]+)">(\d+)</offset>', text)
+      # If text contains <offset idRef="abcd scan=123">456</offset> then matches stores ('123', '456')
+      matches = re.findall(r'<offset idRef="[^"]*?(\d+)">(\d+)</offset>', text)
       # scan_dict stores [123] = 456
-      scan_dict = {int(scan_id.split('scan=')[1]): int(offset) for scan_id, offset in matches if 'scan=' in scan_id}
-      # scan_numbers = [int(scan_id.split('scan=')[1]) for scan_id in scan_offsets.keys() if 'scan=' in scan_id]
+      scan_dict = {int(scan_id): int(offset) for scan_id, offset in matches}
       first_scan = list(scan_dict.keys())[0] if scan_dict else None
       max_scan = list(scan_dict.keys())[-1] if scan_dict else None
       if max_scan is None:
-         raise ValueError("No key containing 'scan=' found in scan_dict")
+         raise ValueError("No key containing a scan number found in scan_dict")
       self.all_scans[file_name] = (scan_dict, first_scan, max_scan, file_url, file_size)
    
    # Create an entry in all_scans for each file and a list of its offsets, but only up until the given scan number is read
@@ -155,8 +156,8 @@ class mzml_repo:
       if not(self.all_scans.get(file_name) and self.all_scans[file_name][1] <= first_scan):
          self.all_scans[file_name] = (scan_dict, first_scan, max_scan, file_url, file_size)
    
-   def populate_all_scans(self, file_name, scan_number, partial_indexing=True):
-      if partial_indexing:
+   def populate_all_scans(self, file_name, scan_number):
+      if self.partial_indexing:
          self.populate_all_scans_partial(file_name, scan_number)
       else:
          self.populate_all_scans_full(file_name)
@@ -228,15 +229,8 @@ class mzml_repo:
 
             max_intensity = max(intensity_values)
             normalized_intensities = intensity_values / max_intensity  # Normalize the intensities
-            filtered_mz = mz_values
+            filtered_mz = mz_values # Can add a filtering option here if desired
             filtered_intensity = normalized_intensities
-
-            # Plot the filtered peaks as a bar graph
-            plt.figure(figsize=(10, 6))
-            plt.bar(filtered_mz, filtered_intensity, width=1.0, color='blue', alpha=0.7)
-            plt.xlabel('m/z')
-            plt.ylabel('Intensity')
-            plt.title(f'Filtered Peaks for Scan {desired_scan}')
 
     # Return scan as a dictionary
     scan_data = {
@@ -253,14 +247,16 @@ class mzml_repo:
 
     return scan_data
 
-given_scan = 105823
-test_repo = mzml_repo(database)
-file_name = test_repo.get_files()[0]
-scan1 = test_repo.get_scan(file_name, given_scan)
-scan2 = test_repo.get_scan(file_name, 106465)
-scan3 = test_repo.get_scan(file_name, 100625)
-scan4 = test_repo.get_scan(file_name, 100247)
-print(scan1['RT-time'])
-print(scan2['RT-time'])
-print(scan3['RT-time'])
-print(scan4['RT-time'])
+# database = 4043415
+# given_scan = 105823
+# test_repo = mzml_repo(database)
+# test_repo.partial_indexing = False
+# file_name = test_repo.get_files()[0]
+# scan1 = test_repo.get_scan(file_name, given_scan)
+# scan2 = test_repo.get_scan(file_name, 106465)
+# scan3 = test_repo.get_scan(file_name, 100625)
+# scan4 = test_repo.get_scan(file_name, 100247)
+# print(scan1['RT-time'])
+# print(scan2['RT-time'])
+# print(scan3['RT-time'])
+# print(scan4['RT-time'])
