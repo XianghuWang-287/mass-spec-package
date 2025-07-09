@@ -11,11 +11,11 @@ import time
 # file_names stores the names of every file in the database
 # all_files stores the size of each file in the database
 # all_scans is a dictionary of tuples where each key is a file name and the value is a tuple containing:
-#     1) scan_dict: a dictionary with keys as scan numbers and values as byte offsets
-#     2) first_scan: the first scan number in the file
-#     3) max_scan: the last scan number in the file
-#     4) file_url: the file's URL
-#     5) file_size: the file's size in bytes
+#     1. scan_dict: a dictionary with keys as scan numbers and values as byte offsets
+#     2. first_scan: the first scan number in the file
+#     3. max_scan: the last scan number in the file
+#     4. file_url: the file's URL
+#     5. file_size: the file's size in bytes
 # E.g. to access the scan_dict for a file, use all_scans[file_name][0].
 # The populate_all_scans() method populates the scan_dict for a given file.
 # Toggle between partial and full indexing via the partial_indexing attribute.
@@ -247,16 +247,16 @@ class mzml_repo:
 
     return scan_data
 
-# database = 4043415
-# given_scan = 105823
-# test_repo = mzml_repo(database)
-# test_repo.partial_indexing = False
-# file_name = test_repo.get_files()[0]
-# scan1 = test_repo.get_scan(file_name, given_scan)
-# scan2 = test_repo.get_scan(file_name, 106465)
-# scan3 = test_repo.get_scan(file_name, 100625)
-# scan4 = test_repo.get_scan(file_name, 100247)
-# print(scan1['RT-time'])
-# print(scan2['RT-time'])
-# print(scan3['RT-time'])
-# print(scan4['RT-time'])
+database = 10211590
+given_scan = 421
+test_repo = mzml_repo(database)
+test_repo.partial_indexing = False
+file_name = test_repo.get_files()[0]
+scan1 = test_repo.get_scan(file_name, given_scan)
+scan2 = test_repo.get_scan(file_name, 1685)
+scan3 = test_repo.get_scan(file_name, 8645)
+scan4 = test_repo.get_scan(file_name, 255)
+print(scan1['RT-time'])
+print(scan2['RT-time'])
+print(scan3['RT-time'])
+print(scan4['RT-time'])
